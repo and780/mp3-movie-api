@@ -1,35 +1,36 @@
 
+
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from main import app, storage
+import main
+from src.storage import MovieStorage
 
 
 @pytest.fixture
-def client():
-    storage.clear()
+def client(tmp_path, monkeypatch):
+    test_storage = MovieStorage(str(tmp_path / "movies.db"))
+    monkeypatch.setattr(main, "storage", test_storage)
 
-    with TestClient(app) as test_client:
+    with TestClient(main.app) as test_client:
         yield test_client
-
-    storage.clear()
 
 
 @pytest.fixture
 def sample_csv_bytes():
-    filepath = Path("fixtures") / "sample_data.csv"
+    filepath = Path("fixtures") / "sample_movies.csv"
     return filepath.read_bytes()
 
 
 @pytest.fixture
-def uploaded_dataset_id(client, sample_csv_bytes):
+def uploaded_movies(client, sample_csv_bytes):
     response = client.post(
         "/upload",
         files={
             "file": (
-                "sample_data.csv",
+                "sample_movies.csv",
                 sample_csv_bytes,
                 "text/csv"
             )
@@ -37,15 +38,15 @@ def uploaded_dataset_id(client, sample_csv_bytes):
     )
 
     assert response.status_code == 200
-    return response.json()["id"]
+    return response.json()
 
 
 @pytest.fixture
 def processing_body():
     return {
         "validation": {
-            "required_columns": ["student_id", "score"],
-            "numeric_columns": ["score"]
+            "required_columns": ["title", "release_year", "rating", "genre"],
+            "numeric_columns": ["release_year", "rating"]
         },
         "processing": {
             "remove_duplicates": True,

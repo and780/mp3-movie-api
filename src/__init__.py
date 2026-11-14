@@ -4,6 +4,9 @@ from .models import (
     HealthResponse,
     ProcessConfig,
     ProcessingReport,
+    MovieUploadInfo,
+    MovieDataResponse,
+    MovieProcessingReport,
 )
 from .storage import MovieStorage
 from .utils import setup_logging
