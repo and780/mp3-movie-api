@@ -11,6 +11,7 @@ from src import (
     HealthResponse,
     ProcessConfig,
     MovieStorage,
+    MovieCache,
     MovieUploadInfo,
     MovieDataResponse,
     MovieProcessingReport,
@@ -33,6 +34,7 @@ app = FastAPI(title="Movie API", version="1.0.0")
 app.middleware("http")(log_requests)
 
 storage = MovieStorage()
+cache = MovieCache()
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -66,6 +68,7 @@ async def upload_movies(file: UploadFile = File(...)):
 
     df = df[MOVIE_COLUMNS]
     storage.save(df)
+    cache.invalidate()
 
     logger.info(f"Uploaded movies: filename={file.filename}, rows={len(df)}")
 
@@ -79,16 +82,25 @@ async def upload_movies(file: UploadFile = File(...)):
 
 @app.get("/movies", response_model=MovieDataResponse)
 def get_movies(limit: int = Query(default=100, ge=1)):
-    """Return stored movies."""
+    """Return stored movies, using the cache when available."""
+    cached_response = cache.get(limit)
+
+    if cached_response is not None:
+        logger.info(f"Cache hit for movies: limit={limit}")
+        return cached_response
+
     total_rows = storage.count_movies()
     records = storage.select_columns(MOVIE_COLUMNS, limit)
 
-    logger.info(f"Retrieved movies: returned_rows={len(records)}")
-
-    return {
+    response = {
         "data": records,
         "total_rows": total_rows
     }
+
+    cache.set(limit, response)
+
+    logger.info(f"Retrieved movies: returned_rows={len(records)}")
+    return response
 
 
 @app.get("/movies/search", response_model=list[dict])
@@ -152,6 +164,7 @@ def process_movies(config: ProcessConfig):
         raise HTTPException(status_code=400, detail=str(error)) from error
 
     storage.save(processed_df)
+    cache.invalidate()
 
     logger.info(
         f"Processed movies: validation_removed={validation_rows_removed}, "
